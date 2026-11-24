@@ -1,0 +1,11 @@
+:root{--navy:#0D1B2A;--navy2:#16283c;--gold:#C9A84C;--gold2:#f3ead0;--mist:#E8EDF3;--ink:#1b2733;--mute:#6b7785;--ok:#2f7d5b;--warn:#b7791f;--bad:#b3392f;--card:#fff;--line:#d9e0e8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--mist);color:var(--ink);font-family:"Noto Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;font-size:16px;line-height:1.5}
+body{padding-bottom:128px}
+.top{position:sticky;top:0;z-index:20;background:var(--navy);border-bottom:3px solid var(--gold);display:flex;align-items:center;gap:12px;padding:8px 14px;color:#fff;height:58px}
+.logo{height:38px;width:auto}
+.top-title{flex:1;font-weight:700;font-size:18px;text-align:left;direction:rtl}
+.icon-btn{background:none;border:1px solid #ffffff44;color:#fff;border-radius:10px;width:40px;height:40px;font-size:24px;line-height:1}
+.demo-banner{background:var(--gold2);color:#6b5516;font-size:13px;text-align:center;padding:6px 10px;border-bottom:1px solid #e5d6a3}
+main{max-width:760px;margin:0 auto;padding:14px}
+h2{font-size:17px;margin:20px 0 8p
