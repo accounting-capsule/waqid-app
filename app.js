@@ -355,7 +355,7 @@ V.export = () => {
   <label for="su">رابط الربط (Web app URL)</label><input id="su" dir="ltr" placeholder="https://script.google.com/macros/s/.../exec"><label for="sk">مفتاح الربط</label><input id="sk" dir="ltr" type="password">
   <div class="btns"><button class="btn gold" id="ssv">حفظ واختبار</button><button class="btn ghost" id="spl">استرجاع من الشيت</button><button class="btn ghost" id="sph">رفع الآن</button></div><div class="hint" id="syncst"></div></div>
   <div class="card"><div class="t">نسخة احتياطية</div><p class="s">احفظ بيانات التطبيق كملف، أو استرجعها منه.</p><div class="btns"><button class="btn ghost" id="bk">حفظ نسخة</button><button class="btn ghost" id="rs">استرجاع</button></div><input type="file" id="rsf" accept=".json" hidden></div>
-  <div class="card"><div class="t">بيانات تجريبية</div><p class="s">النسخة الحالية تعمل ببيانات وهمية للتجربة فقط.</p><button class="btn danger" id="clr">مسح كل البيانات والبدء من الصفر</button></div>`;
+  <div class="card"><div class="t">مسح البيانات</div><p class="s">يمسح السجلات من هذا الجهاز. تُحفظ نسخة منها في المحذوفات.</p><button class="btn danger" id="clr">مسح كل البيانات والبدء من الصفر</button></div>`;
   $('#pst').onclick = async () => {
     try { $('#pmsg').textContent = 'جاري التجهيز...';
       const r = await WaqidExport.exportPaste(JSZip, db, db.lastExport);
