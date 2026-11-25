@@ -27,7 +27,15 @@ const addDays = (iso, n) => new Date((dayNum(iso) + n) * 86400000).toISOString()
 let db;
 function load() {
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) { db = null; }
-  if (!db) { db = Object.assign(WaqidDemo(), { log: [], demo: true }); save(); }
+  if (!db) { db = { clients: [], contracts: [], bills: [], journal: [], log: [], trash: [], demo: false, services: LISTS.services.slice() }; localStorage.setItem(KEY, JSON.stringify(db)); }
+  if (db.demo) {
+    /* old builds seeded fake data. Remove it only if every record is still an untouched fake one; otherwise keep everything. */
+    const T = '(تجريبي)', has = s => String(s || '').includes(T);
+    const onlyFake = (db.clients || []).every(x => has(x.name)) && (db.contracts || []).every(x => has(x.name)) && (db.bills || []).every(x => has(x.project)) && (db.journal || []).every(x => !x.project || has(x.project));
+    if (onlyFake) db = { clients: [], contracts: [], bills: [], journal: [], log: [], trash: db.trash || [], demo: false, services: Array.isArray(db.services) ? db.services : LISTS.services.slice() };
+    else db.demo = false;
+    localStorage.setItem(KEY, JSON.stringify(db));
+  }
   if (!Array.isArray(db.services)) { db.services = LISTS.services.slice(); save(); }
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(db)); if (typeof SYNC !== 'undefined') SYNC.schedule(); }
@@ -277,7 +285,7 @@ function formView(kind, idx) {
     if (kind === 'clients' && db.contracts.some(c => c.client === x.name)) return toast('لا يمكن حذف عميل له عقود');
     if (kind === 'contracts' && (db.bills.some(b => b.project === x.name) || db.journal.some(j => j.project === x.name))) return toast('لا يمكن حذف مشروع له مستخلصات أو حركات');
     if (!confirm('حذف هذا السجل؟ سيُسجل الحذف في سجل التعديلات.')) return;
-    db[K.arr].splice(+idx, 1); logChange('حذف', K.label, K.title(x)); save(); toast('تم الحذف'); location.hash = '#/records/' + kind;
+    (db.trash = db.trash || []).push({ t: new Date().toISOString(), kind: K.arr, rec: x }); db[K.arr].splice(+idx, 1); logChange('حذف', K.label, K.title(x)); save(); toast('تم الحذف'); location.hash = '#/records/' + kind;
   };
   draw();
 }
@@ -336,7 +344,10 @@ V.reports = (clientName) => {
 
 V.export = () => {
   setTitle('التصدير إلى Excel');
-  $('#app').innerHTML = `<div class="card"><div class="t">تحديث ملف واقد المالي</div>
+  $('#app').innerHTML = `<div class="card"><div class="t">تصدير جاهز للصق في ملفك</div>
+  <p class="s">ينشئ ملف إكسل بنفس ترتيب أعمدة ملفك المالي ونفس عناوين الأعمدة وعناوين الخلايا (الرؤوس في الصف 6 والسجلات من الصف 7). على كل تبويب ملاحظة تقول لك أين تلصقه. الملف يحتوي كل السجلات من الأول، والجديد منذ آخر تصدير مظلل بالأخضر. ملفك الأصلي لا يتغير، وأنت من يلصق.</p>
+  <button class="btn gold" id="pst">تنزيل ملف اللصق</button><div class="hint" id="pmsg"></div></div>
+  <div class="card"><div class="t">تحديث ملف واقد المالي (خيار متقدم)</div>
   <p class="s">اختر ملف الإكسل المالي الخاص بك (.xlsx). التطبيق يضع بياناتك في جداول العملاء والعقود والمستخلصات والحركات ويترك كل المعادلات كما هي، ثم يحمّل لك نسخة جديدة. الملف الأصلي لا يتغير. افتح النسخة في Excel وكل الحسابات تتحدث تلقائياً.</p>
   <label for="wb">ملف الإكسل المالي</label><input type="file" id="wb" accept=".xlsx"><button class="btn gold" id="go" disabled>إنشاء ملف Excel محدّث</button><div class="hint" id="msg"></div></div>
   <div class="card"><div class="t">قائمة الخدمات</div><p class="s">أضف أو احذف أنواع الخدمات. التغيير يظهر في العقود، ويُكتب في ملف الإكسل عند التصدير.</p><a class="btn ghost" href="#/lists" style="text-align:center;text-decoration:none">تعديل قائمة الخدمات</a></div>
@@ -345,6 +356,15 @@ V.export = () => {
   <div class="btns"><button class="btn gold" id="ssv">حفظ واختبار</button><button class="btn ghost" id="spl">استرجاع من الشيت</button><button class="btn ghost" id="sph">رفع الآن</button></div><div class="hint" id="syncst"></div></div>
   <div class="card"><div class="t">نسخة احتياطية</div><p class="s">احفظ بيانات التطبيق كملف، أو استرجعها منه.</p><div class="btns"><button class="btn ghost" id="bk">حفظ نسخة</button><button class="btn ghost" id="rs">استرجاع</button></div><input type="file" id="rsf" accept=".json" hidden></div>
   <div class="card"><div class="t">بيانات تجريبية</div><p class="s">النسخة الحالية تعمل ببيانات وهمية للتجربة فقط.</p><button class="btn danger" id="clr">مسح كل البيانات والبدء من الصفر</button></div>`;
+  $('#pst').onclick = async () => {
+    try { $('#pmsg').textContent = 'جاري التجهيز...';
+      const r = await WaqidExport.exportPaste(JSZip, db, db.lastExport);
+      const blob = new Blob([r.bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'واقد-للصق-' + today() + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+      db.lastExport = { clients: db.clients.length, contracts: db.contracts.length, bills: db.bills.length, journal: db.journal.length, t: new Date().toISOString() }; save();
+      $('#pmsg').textContent = `تم: ${r.report['العملاء']} عميل، ${r.report['العقود']} عقد، ${r.report['المستخلصات']} مستخلص، ${r.report['الحركات']} حركة. افتح الملف وألصق كل تبويب في مكانه (مكتوب في أعلى كل تبويب).`;
+    } catch (e) { $('#pmsg').textContent = 'تعذر التصدير: ' + e.message; }
+  };
   let file = null; $('#wb').onchange = e => { file = e.target.files[0]; $('#go').disabled = !file; };
   $('#go').onclick = async () => {
     try { $('#msg').textContent = 'جاري التجهيز...';
@@ -361,7 +381,7 @@ V.export = () => {
   $('#bk').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(db)], { type: 'application/json' })); a.download = 'waqid-backup-' + today() + '.json'; a.click(); };
   $('#rs').onclick = () => $('#rsf').click();
   $('#rsf').onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.clients || !d.journal) throw 0; if (!Array.isArray(d.services)) d.services = LISTS.services.slice(); db = d; save(); toast('تم الاسترجاع'); location.hash = '#/home'; } catch (x) { toast('ملف غير صالح'); } };
-  $('#clr').onclick = () => { if (confirm('مسح كل البيانات؟')) { db = { clients: [], contracts: [], bills: [], journal: [], log: [], demo: false, services: LISTS.services.slice() }; save(); toast('تم المسح'); location.hash = '#/home'; } };
+  $('#clr').onclick = () => { if (confirm('مسح كل البيانات؟')) { const keep = (db.trash || []).slice(); if (!db.demo) ['clients', 'contracts', 'bills', 'journal'].forEach(k => db[k].forEach(rec => keep.push({ t: new Date().toISOString(), kind: k, rec }))); db = { clients: [], contracts: [], bills: [], journal: [], log: [], trash: keep, demo: false, services: db.services.slice() }; save(); toast('تم المسح'); location.hash = '#/home'; } };
 };
 
 V.lists = () => {
@@ -384,7 +404,6 @@ V.lists = () => {
 function route() {
   const parts = (location.hash || '#/home').slice(2).split('/'); const name = parts[0] || 'home';
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.t === name || (['new', 'view'].includes(name) && a.dataset.t === 'add') || (name === 'lists' && a.dataset.t === 'export')));
-  $('#demoBanner').hidden = !db.demo;
   (V[name] || V.home)(...parts.slice(1)); window.scrollTo(0, 0);
 }
 load(); window.addEventListener('hashchange', route); route();
