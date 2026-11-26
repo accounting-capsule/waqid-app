@@ -38,18 +38,20 @@ function load() {
   }
   if (!Array.isArray(db.services)) { db.services = LISTS.services.slice(); save(); }
 }
-function save() { localStorage.setItem(KEY, JSON.stringify(db)); if (typeof SYNC !== 'undefined') SYNC.schedule(); }
+function save() { if (typeof CLIENT !== 'undefined') CLIENT.schedule(); localStorage.setItem(KEY, JSON.stringify(db)); if (typeof SYNC !== 'undefined') SYNC.schedule(); }
 const SYNC_TXT = { ok: 'تمت المزامنة ✓', pending: 'بانتظار المزامنة…', offline: 'لا يوجد اتصال، سيُرفع لاحقاً', conflict: 'توجد نسخة أحدث على الشيت', err: 'تعذرت المزامنة', warn: 'لم يتم الرفع' };
 let syncState = '';
 function syncBanner(s) {
   let b = document.getElementById('syncbanner');
-  const bad = { conflict: 'تنبيه: تعديلاتك على هذا الجهاز لم تُرفع. يوجد تعديل أحدث من جهاز آخر. افتح «التصدير» واضغط «استرجاع من الشيت» (سيستبدل تعديلات هذا الجهاز) أو سجّل التعديلات من جديد.', err: 'تنبيه: تعذرت المزامنة، التعديلات الأخيرة غير محفوظة في الشيت.', warn: 'تنبيه: لم يتم الرفع.' };
+  const bad = { conflict: 'تنبيه: تعديلاتك على هذا الجهاز لم تُرفع. يوجد تعديل أحدث من جهاز آخر. افتح «التصدير» واضغط «استرجاع من الشيت» (سيستبدل تعديلات هذا الجهاز) أو سجّل التعديلات من جديد.', err: 'تنبيه: تعذرت المزامنة، التعديلات الأخيرة غير محفوظة في الشيت.', warn: 'تنبيه: لم يتم الرفع.', cunauth: 'تنبيه: مفتاح الإرسال للمكتب لم يعد صالحاً، التسجيلات الجديدة محفوظة على جهازك فقط. تواصل مع المكتب.' };
   if (!bad[s]) { if (b) b.remove(); return; }
   if (!b) { b = document.createElement('div'); b.id = 'syncbanner'; b.style.cssText = 'position:sticky;top:0;z-index:50;background:#b3261e;color:#fff;padding:10px 14px;font-size:14px;line-height:1.5'; document.body.prepend(b); }
   b.textContent = bad[s];
 }
 const SYNC = WaqidSync({ storage: localStorage, fetch: (u, o) => fetch(u, o), getDb: () => db, setDb: d => { db = d; localStorage.setItem(KEY, JSON.stringify(db)); }, onStatus: (s, m) => { syncState = s; syncBanner(s); const e = document.getElementById('syncst'); if (e) e.textContent = SYNC_TXT[s] || s; } });
-window.addEventListener('online', () => SYNC.flush());
+const CLIENT_TXT = { ok: 'تم إرسال كل التسجيلات للمكتب ✓', pending: 'بانتظار الإرسال…', offline: 'لا يوجد اتصال، سيُرسل لاحقاً', err: 'تعذر الإرسال، سنعيد المحاولة', unauth: 'مفتاح الإرسال لم يعد صالحاً. تواصل مع المكتب' };
+const CLIENT = WaqidClient({ storage: localStorage, fetch: (u, o) => fetch(u, o), getDb: () => db, persist: () => localStorage.setItem(KEY, JSON.stringify(db)), onStatus: s => { const e = document.getElementById('clst'); if (e) e.textContent = CLIENT_TXT[s] || s; if (s === 'unauth') syncBanner('cunauth'); else if (s === 'ok') syncBanner(''); } });
+window.addEventListener('online', () => { SYNC.flush(); CLIENT.flush(); });
 function logChange(what, kind, name) { db.log.unshift({ t: new Date().toISOString(), what, kind, name }); db.log = db.log.slice(0, 300); }
 
 /* ---------- calculations (mirror the workbook formulas) ---------- */
@@ -354,6 +356,9 @@ V.export = () => {
   <div class="card"><div class="t">المزامنة مع Google Sheet</div><p class="s">كل تعديل يُحفظ تلقائياً في الشيت الخاص بك، فلو اتمسح المتصفح ترجع البيانات بزر الاسترجاع.</p>
   <label for="su">رابط الربط (Web app URL)</label><input id="su" dir="ltr" placeholder="https://script.google.com/macros/s/.../exec"><label for="sk">مفتاح الربط</label><input id="sk" dir="ltr" type="password">
   <div class="btns"><button class="btn gold" id="ssv">حفظ واختبار</button><button class="btn ghost" id="spl">استرجاع من الشيت</button><button class="btn ghost" id="sph">رفع الآن</button></div><div class="hint" id="syncst"></div></div>
+  <div class="card"><div class="t">إرسال التسجيلات إلى المكتب</div><p class="s">يرسل كل عميل وعقد ومستخلص وحركة تسجلها إلى شيت المكتب تلقائياً. المفتاح هنا للإرسال فقط: لا يقرأ ولا يعدّل ولا يحذف شيئاً من الشيت.</p>
+  <label for="cu">رابط الإرسال</label><input id="cu" dir="ltr" placeholder="https://script.google.com/macros/s/.../exec"><label for="ck">مفتاح الإرسال</label><input id="ck" dir="ltr" type="password" autocomplete="off">
+  <div class="btns"><button class="btn gold" id="csv">حفظ واختبار</button><button class="btn ghost" id="csn">إرسال الآن</button></div><div class="hint" id="clst"></div></div>
   <div class="card"><div class="t">نسخة احتياطية</div><p class="s">احفظ بيانات التطبيق كملف، أو استرجعها منه.</p><div class="btns"><button class="btn ghost" id="bk">حفظ نسخة</button><button class="btn ghost" id="rs">استرجاع</button></div><input type="file" id="rsf" accept=".json" hidden></div>
   <div class="card"><div class="t">مسح البيانات</div><p class="s">يمسح السجلات من هذا الجهاز. تُحفظ نسخة منها في المحذوفات.</p><button class="btn danger" id="clr">مسح كل البيانات والبدء من الصفر</button></div>`;
   $('#pst').onclick = async () => {
@@ -378,6 +383,9 @@ V.export = () => {
   $('#ssv').onclick = async () => { SYNC.configure($('#su').value.trim(), $('#sk').value.trim()); try { const p = await SYNC.ping(); $('#syncst').textContent = p.ok ? (p.rev ? 'الربط شغال. يوجد بيانات محفوظة، اضغط استرجاع أو رفع الآن.' : 'الربط شغال. اضغط رفع الآن.') : 'المفتاح غير صحيح'; } catch (e) { $('#syncst').textContent = 'تعذر الاتصال بالرابط'; } };
   $('#spl').onclick = async () => { if (!confirm('استبدال بيانات هذا الجهاز بالنسخة الموجودة على الشيت؟')) return; const r = await SYNC.pull(); if (r.ok) { toast('تم الاسترجاع'); location.hash = '#/home'; } else $('#syncst').textContent = 'لا توجد بيانات على الشيت أو تعذر الاتصال'; };
   $('#sph').onclick = async () => { const r = await SYNC.push(SYNC.get().rev === undefined && confirm('الشيت فيه بيانات قديمة. استبدالها ببيانات هذا الجهاز؟')); if (r.ok) toast('تم الرفع'); else if (r.error === 'conflict') $('#syncst').textContent = 'الشيت فيه نسخة أحدث. استرجعها أولاً.'; };
+  { const c = CLIENT.get(); $('#cu').value = c.url || ''; $('#ck').value = c.key || ''; $('#clst').textContent = c.url ? (CLIENT.pending() ? 'بانتظار الإرسال: ' + CLIENT.pending() : (c.last ? 'آخر إرسال: ' + new Date(c.last).toLocaleString('ar-EG') : '')) : ''; }
+  $('#csv').onclick = async () => { CLIENT.configure($('#cu').value.trim(), $('#ck').value.trim()); const r = await CLIENT.test(); if (r.ok) { $('#clst').textContent = 'الربط شغال'; CLIENT.flush(); } else $('#clst').textContent = r.error === 'unauthorized' ? 'المفتاح غير صحيح' : 'تعذر الاتصال'; };
+  $('#csn').onclick = async () => { const r = await CLIENT.flush(); if (r.ok) toast('تم الإرسال'); };
   $('#bk').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(db)], { type: 'application/json' })); a.download = 'waqid-backup-' + today() + '.json'; a.click(); };
   $('#rs').onclick = () => $('#rsf').click();
   $('#rsf').onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.clients || !d.journal) throw 0; if (!Array.isArray(d.services)) d.services = LISTS.services.slice(); db = d; save(); toast('تم الاسترجاع'); location.hash = '#/home'; } catch (x) { toast('ملف غير صالح'); } };
@@ -406,6 +414,6 @@ function route() {
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.t === name || (['new', 'view'].includes(name) && a.dataset.t === 'add') || (name === 'lists' && a.dataset.t === 'export')));
   (V[name] || V.home)(...parts.slice(1)); window.scrollTo(0, 0);
 }
-load(); window.addEventListener('hashchange', route); route();
+load(); window.addEventListener('hashchange', route); route(); CLIENT.flush();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
