@@ -30,7 +30,7 @@
         const c = get(); c.rev = j.rev; c.last = new Date().toISOString(); put(c); env.setDb(j.db); status('ok'); return j;
       } catch (e) { status('offline'); return { ok: false, error: 'offline' }; }
     }
-    return { get, put, push, pull, ping: () => call('ping'),
+    return { get, put, push, pull, raw: call, ping: () => call('ping'),
       configure(url, key) { const c = get(); c.url = url; c.key = key; delete c.rev; put(c); },
       schedule() { if (!get().url) return; clearTimeout(timer); status('pending'); timer = setTimeout(() => push(false), env.delay === undefined ? 3000 : env.delay); },
       flush: () => { clearTimeout(timer); return push(false); } };
