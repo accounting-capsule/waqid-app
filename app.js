@@ -181,10 +181,25 @@ function listRows(kind, q) {
   if (q) rows = rows.filter(r => JSON.stringify(r.x).toLowerCase().includes(q.toLowerCase()));
   return rows;
 }
+function approveDel(kind, i) {
+  const K = KINDS[kind]; const x = db[K.arr][i]; if (!x) return;
+  if (kind === 'clients' && db.contracts.some(c => c.client === x.name)) return toast('لا يمكن حذف عميل له عقود');
+  if (kind === 'contracts' && (db.bills.some(b => b.project === x.name) || db.journal.some(j => j.project === x.name))) return toast('لا يمكن حذف مشروع له مستخلصات أو حركات');
+  if (!confirm('حذف هذا السجل نهائياً من بياناتك؟ يبقى في المحذوفات وسجل التعديلات.')) return;
+  (db.trash = db.trash || []).push({ t: new Date().toISOString(), kind: K.arr, rec: x }); db[K.arr].splice(i, 1); logChange('حذف (بموافقتك)', K.label, K.title(x)); save(); toast('تم الحذف');
+}
+function keepRec(kind, i) { const x = db[KINDS[kind].arr][i]; if (!x) return; delete x.clientDeleted; logChange('إبقاء رغم طلب العميل', KINDS[kind].label, KINDS[kind].title(x)); save(); toast('تم إبقاء السجل'); }
+function flagBox(after) {
+  const f = WaqidInbox.flagged(db); const el = $('#flg'); if (!el) return;
+  el.innerHTML = f.length ? `<div class="card" style="border-color:#b3261e"><div class="t">بانتظار موافقتك على الحذف (${f.length})</div><p class="s">العميل حذف هذه السجلات عنده. لم يُحذف شيء من بياناتك. وافق على الحذف أو أبقِ السجل.</p>${f.map((r, n) => `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><div><div class="t">${esc(KINDS[r.kind].title(r.x))}</div><div class="s">${KINDS[r.kind].label} · محذوف من العميل</div></div><div class="btns"><button class="pill bad" data-ap="${n}" style="border:0;font:inherit">حذف</button><button class="pill ok" data-kp="${n}" style="border:0;font:inherit">إبقاء</button></div></div>`).join('')}</div>` : '';
+  el.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => { const r = f[+b.dataset.ap]; approveDel(r.kind, r.i); after(); });
+  el.querySelectorAll('[data-kp]').forEach(b => b.onclick = () => { const r = f[+b.dataset.kp]; keepRec(r.kind, r.i); after(); });
+}
 V.records = (kind) => {
   kind = kind || 'journal'; setTitle('السجلات');
   const seg = Object.keys(KINDS).map(k => `<button class="${k === kind ? 'on' : ''}" data-k="${k}">${KINDS[k].plural} (${db[KINDS[k].arr].length})</button>`).join('');
-  $('#app').innerHTML = `<div class="seg">${seg}</div><input class="search" id="q" placeholder="بحث..."><div id="list"></div>`;
+  $('#app').innerHTML = `<div id="flg"></div><div class="seg">${seg}</div><input class="search" id="q" placeholder="بحث..."><div id="list"></div>`;
+  const redraw = () => V.records(kind); flagBox(redraw);
   const draw = () => {
     const rows = listRows(kind, $('#q').value.trim()); const c = calc();
     $('#list').innerHTML = rows.length ? rows.map(({ x, i }) => {
@@ -193,7 +208,7 @@ V.records = (kind) => {
       if (kind === 'bills') { const b = c.bills[i]; right = `<div class="amt">${money(x.value)}</div>${pill(b.cls)}`; }
       if (kind === 'contracts') right = `<div class="amt">${money(x.value)}</div>${pill(x.status)}`;
       if (kind === 'clients') { const k = c.clients[x.name]; right = k ? `<div class="s">مستحق</div><div class="amt">${money(k.due)}</div>` : ''; }
-      return `<a class="card item" href="#/view/${kind}/${i}"><div class="row"><div><div class="t">${esc(K.title(x))}</div><div class="s">${esc(K.sub(x))}</div></div><div style="text-align:left">${right}</div></div></a>`;
+      return `<a class="card item" href="#/view/${kind}/${i}"><div class="row"><div><div class="t">${esc(K.title(x))}${x.clientDeleted ? ' <span class="pill bad">محذوف من العميل</span>' : ''}</div><div class="s">${esc(K.sub(x))}</div></div><div style="text-align:left">${right}</div></div></a>`;
     }).join('') : '<div class="empty">لا توجد سجلات</div>';
   };
   $('#q').oninput = draw; draw();
@@ -278,7 +293,7 @@ function formView(kind, idx) {
       const old = db[K.arr][+idx];
       if (kind === 'clients' && old.name !== out.name) db.contracts.forEach(c => { if (c.client === old.name) c.client = out.name; });
       if (kind === 'contracts' && old.name !== out.name) { db.bills.forEach(b => { if (b.project === old.name) b.project = out.name; }); db.journal.forEach(j => { if (j.project === old.name) j.project = out.name; }); }
-      db[K.arr][+idx] = out; logChange('تعديل', K.label, K.title(out));
+      if (old._id) out._id = old._id; if (old.clientDeleted) out.clientDeleted = old.clientDeleted; db[K.arr][+idx] = out; logChange('تعديل', K.label, K.title(out));
     } else { db[K.arr].push(out); logChange('إضافة', K.label, K.title(out)); }
     save(); toast('تم الحفظ ✓'); location.hash = '#/records/' + kind;
   };
@@ -359,6 +374,8 @@ V.export = () => {
   <div class="card"><div class="t">إرسال التسجيلات إلى المكتب</div><p class="s">يرسل كل عميل وعقد ومستخلص وحركة تسجلها إلى شيت المكتب تلقائياً. المفتاح هنا للإرسال فقط: لا يقرأ ولا يعدّل ولا يحذف شيئاً من الشيت.</p>
   <label for="cu">رابط الإرسال</label><input id="cu" dir="ltr" placeholder="https://script.google.com/macros/s/.../exec"><label for="ck">مفتاح الإرسال</label><input id="ck" dir="ltr" type="password" autocomplete="off">
   <div class="btns"><button class="btn gold" id="csv">حفظ واختبار</button><button class="btn ghost" id="csn">إرسال الآن</button></div><div class="hint" id="clst"></div></div>
+  <div class="card"><div class="t">استيراد من العملاء</div><p class="s">ينقل ما أرسله العميل إلى بياناتك: الجديد يُضاف، والمعدّل يُحدَّث. إذا حذف العميل سجلاً لا يُحذف عندك: يظهر «محذوف من العميل» وتقرر أنت في صفحة السجلات. يلزم ربط الشيت بمفتاح المكتب في الأعلى.</p>
+  <button class="btn gold" id="imp">استيراد الآن</button><div class="hint" id="impst"></div><div id="rev"></div></div>
   <div class="card"><div class="t">نسخة احتياطية</div><p class="s">احفظ بيانات التطبيق كملف، أو استرجعها منه.</p><div class="btns"><button class="btn ghost" id="bk">حفظ نسخة</button><button class="btn ghost" id="rs">استرجاع</button></div><input type="file" id="rsf" accept=".json" hidden></div>
   <div class="card"><div class="t">مسح البيانات</div><p class="s">يمسح السجلات من هذا الجهاز. تُحفظ نسخة منها في المحذوفات.</p><button class="btn danger" id="clr">مسح كل البيانات والبدء من الصفر</button></div>`;
   $('#pst').onclick = async () => {
@@ -386,6 +403,30 @@ V.export = () => {
   { const c = CLIENT.get(); $('#cu').value = c.url || ''; $('#ck').value = c.key || ''; $('#clst').textContent = c.url ? (CLIENT.pending() ? 'بانتظار الإرسال: ' + CLIENT.pending() : (c.last ? 'آخر إرسال: ' + new Date(c.last).toLocaleString('ar-EG') : '')) : ''; }
   $('#csv').onclick = async () => { CLIENT.configure($('#cu').value.trim(), $('#ck').value.trim()); const r = await CLIENT.test(); if (r.ok) { $('#clst').textContent = 'الربط شغال'; CLIENT.flush(); } else $('#clst').textContent = r.error === 'unauthorized' ? 'المفتاح غير صحيح' : 'تعذر الاتصال'; };
   $('#csn').onclick = async () => { const r = await CLIENT.flush(); if (r.ok) toast('تم الإرسال'); };
+  const drawRev = () => { const r = db.inboxReview || []; $('#rev').innerHTML = r.length ? `<p class="s">للمراجعة (لم تُضف تلقائياً):</p>${r.map((x, n) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><div class="s">${WaqidInbox.LABEL[x.kind]}: ${esc(WaqidInbox.TITLE[x.kind](x.rec || {}))} · ${esc(x.reason)}</div><button class="pill" data-rv="${n}" style="border:0;font:inherit">تم</button></div>`).join('')}` : ''; document.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => { db.inboxReview.splice(+b.dataset.rv, 1); save(); drawRev(); }); };
+  drawRev();
+  $('#imp').onclick = async () => {
+    const say = m => { $('#impst').textContent = m; };
+    const c = SYNC.get(); if (!c.url || !c.key) return say('اربط الشيت أولاً بمفتاح المكتب (بطاقة المزامنة)');
+    $('#imp').disabled = true; say('جاري الاستيراد...');
+    const tot = { added: 0, updated: 0, flagged: 0, review: 0, pending: 0 }; let note = '';
+    try {
+      for (let round = 0; round < 20; round++) {
+        const j = await SYNC.raw('inbox_pull');
+        if (!j.ok) { note = j.error === 'unauthorized' ? 'مفتاح المكتب غير صحيح' : 'تعذر الاستيراد: ' + j.error; break; }
+        if (!j.events.length) break;
+        const r = WaqidInbox.apply(db, j.events); Object.keys(tot).forEach(k => { tot[k] = round === 0 ? r[k] : tot[k] + r[k]; });
+        if (r.added + r.updated + r.flagged + r.review) save(); else localStorage.setItem(KEY, JSON.stringify(db));
+        const p = await SYNC.flush();
+        if (!p.ok) { note = 'تم الدمج على هذا الجهاز لكن لم يُرفع للشيت (' + (p.error === 'conflict' ? 'يوجد تعديل أحدث على الشيت، استرجع ثم أعد الاستيراد' : p.error) + '). لم يتم تأكيد الاستلام للعميل، وإعادة الاستيراد آمنة.'; break; }
+        if (r.ackable.length) { const k = await SYNC.raw('inbox_ack', { items: r.ackable }); if (!k.ok) { note = 'تعذر تأكيد الاستلام: ' + k.error; break; } }
+        if (!j.more || !r.ackable.length) break;
+      }
+    } catch (e) { note = 'لا يوجد اتصال'; }
+    $('#imp').disabled = false; drawRev();
+    say(note || (tot.added + tot.updated + tot.flagged + tot.review + tot.pending === 0 ? 'لا يوجد جديد من العملاء' : `تم: ${tot.added} جديد، ${tot.updated} معدّل، ${tot.flagged} بانتظار موافقتك على الحذف، ${tot.review} للمراجعة${tot.pending ? '، ' + tot.pending + ' ينتظر سجلاً مرتبطاً به' : ''}.`));
+  };
+
   $('#bk').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(db)], { type: 'application/json' })); a.download = 'waqid-backup-' + today() + '.json'; a.click(); };
   $('#rs').onclick = () => $('#rsf').click();
   $('#rsf').onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.clients || !d.journal) throw 0; if (!Array.isArray(d.services)) d.services = LISTS.services.slice(); db = d; save(); toast('تم الاسترجاع'); location.hash = '#/home'; } catch (x) { toast('ملف غير صالح'); } };
